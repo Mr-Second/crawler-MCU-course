@@ -138,7 +138,7 @@ class McuCourseCrawler
           @courses << {
             year: @year,
             term: @term,
-            code: serial_no,
+            code: "#{@year}-#{@term}-#{serial_no}-#{group_code}",
             name: course_name,
             department: department,
             department_code: department_code,
