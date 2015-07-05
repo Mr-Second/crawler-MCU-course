@@ -1,4 +1,7 @@
+.env
+
 deprecated
+tmp
+
 *.json
 !departments.json
-tmp

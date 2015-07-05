@@ -37,13 +37,12 @@ class McuCourseCrawler
     @update_progress_proc = update_progress
     @after_each_proc = after_each
 
-    @ic = Iconv.new("utf-8//translit//IGNORE","big5")
+    @ic = Iconv.new("utf-8//IGNORE//translit","big5")
   end
 
   def courses
     @preload_url = "http://www.mcu.edu.tw/student/new-query/sel-query/query_0_1.asp?gdb=#{@term}&gyy=#{@year-1911}"
     @courses = []
-    @threads = []
 
     # start crawl
     visit @preload_url
@@ -180,12 +179,13 @@ class McuCourseCrawler
     end # schs.each_with_index do
     @courses.uniq!
 
+    @threads = []
     @courses.each do |course|
       sleep(1) until (
         @threads.delete_if { |t| !t.status };  # remove dead (ended) threads
-        @threads.count < (ENV['MAX_THREADS'] || 20)
+        @threads.count < ( (ENV['MAX_THREADS'] && ENV['MAX_THREADS'].to_i) || 30)
       )
-      Thread.new {
+      @threads << Thread.new {
         @after_each_proc.call(course: course) if @after_each_proc
       }
     end
