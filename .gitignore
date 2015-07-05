@@ -1,1 +1,4 @@
 deprecated
+*.json
+!departments.json
+tmp

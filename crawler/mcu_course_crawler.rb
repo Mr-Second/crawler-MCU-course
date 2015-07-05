@@ -1,9 +1,10 @@
 require 'crawler_rocks'
+
 require 'iconv'
+require 'pry'
+
 require 'thread'
 require 'thwait'
-require 'rest-client'
-require 'pry'
 
 class McuCourseCrawler
   include CrawlerRocks::DSL
@@ -36,7 +37,7 @@ class McuCourseCrawler
     @update_progress_proc = update_progress
     @after_each_proc = after_each
 
-    @encoding = 'big5'
+    @ic = Iconv.new("utf-8//translit//IGNORE","big5")
   end
 
   def courses
@@ -45,33 +46,28 @@ class McuCourseCrawler
     @threads = []
 
     # start crawl
-    r = RestClient.get @preload_url
-    cookie = r.cookies
-
-    ic = Iconv.new("utf-8//translit//IGNORE","big5")
-    r = RestClient.get @get_url, :cookies => cookie
-    doc = Nokogiri::HTML(ic.iconv(r.to_s))
+    visit @preload_url
+    visit @get_url
 
     error_urls = []
     # 跳過不限
-    schs = doc.css('select[name="sch"] option')[1..-1].map{|k| k['value']}
+    schs = @doc.css('select[name="sch"] option')[1..-1].map{|k| k['value']}
 
     # save departments hash
-    departments = Hash[doc.css('select[name="dept1"] option')[1..-1].map {|k| ss = k.text.strip.split(' - '); [ss[0], ss[1]]}]
-    File.write('departments.json', JSON.pretty_generate(departments))
+    departments = Hash[@doc.css('select[name="dept1"] option')[1..-1].map {|k| ss = k.text.strip.split(' - '); [ss[0], ss[1]]}]
+    Dir.mkdir('tmp') if not Dir.exist?('tmp')
+    File.write('tmp/departments.json', JSON.pretty_generate(departments))
 
     @total_department_count = schs.count
     @processed_department_count = 0
 
     schs.each_with_index do |sch, ii|
-
-      sleep(1) until (
-        @threads.delete_if { |t| !t.status };  # remove dead (ended) threads
-        @threads.count < (ENV['MAX_THREADS'] || 20)
-      )
-
       # @threads << Thread.new do
-        doc = Nokogiri::HTML(ic.iconv (RestClient.post(@post_url, {:sch => sch}, :cookies => cookie)).to_s)
+        r = RestClient.post(@post_url, {
+          sch: sch
+        }, cookies: @cookies)
+
+        doc = Nokogiri::HTML(@ic.iconv(r))
         rows = doc.css('table tr:not(:first-child)')
 
         # progress = ProgressBar.create(:title => "#{ii}", :total => rows.count)
@@ -115,7 +111,7 @@ class McuCourseCrawler
 
               # new periods format
               hours.each do |period|
-                course_days << day
+                course_days << day.to_i
                 course_periods << PERIODS[period]
                 course_locations << locs[i]
               end
@@ -139,6 +135,7 @@ class McuCourseCrawler
             year: @year,
             term: @term,
             code: "#{@year}-#{@term}-#{serial_no}-#{group_code}",
+            general_code: serial_no,
             name: course_name,
             department: department,
             department_code: department_code,
@@ -179,15 +176,24 @@ class McuCourseCrawler
         end # rows.each do
         puts "done #{@processed_department_count} / #{@total_department_count}"
         @processed_department_count += 1
-        if @processed_department_count == @total_department_count
-          File.open('courses.json', 'w') {|f| f.write(JSON.pretty_generate(@courses))}
-        end
       # end # Thread.new
     end # schs.each_with_index do
+    @courses.uniq!
+
+    @courses.each do |course|
+      sleep(1) until (
+        @threads.delete_if { |t| !t.status };  # remove dead (ended) threads
+        @threads.count < (ENV['MAX_THREADS'] || 20)
+      )
+      Thread.new {
+        @after_each_proc.call(course: course) if @after_each_proc
+      }
+    end
     ThreadsWait.all_waits(*@threads)
-    puts "done"
+
+    @courses
   end # def course
 end # class McuCourseCrawler
 
-cc = McuCourseCrawler.new(year: 2014, term: 1)
-cc.courses
+# cc = McuCourseCrawler.new(year: 2014, term: 1)
+# File.open('mcu_courses.json', 'w') {|f| f.write(JSON.pretty_generate(cc.courses))}
