@@ -130,12 +130,16 @@ class McuCourseCrawler
           #   book = nil
           # end
 
+          datas[4] && datas[4].search('br').each{|br| br.replace("\n")}
+          lecturer = datas[4] && datas[4].text.split("\n").map{|txt| txt.rpartition(':')[-1].strip}.join(',')
+
           @courses << {
             year: @year,
             term: @term,
             code: "#{@year}-#{@term}-#{serial_no}-#{group_code}",
             general_code: serial_no,
             name: course_name,
+            lecturer: lecturer,
             department: department,
             department_code: department_code,
             group_name: group_name,
